@@ -49,7 +49,54 @@ for (sample.col in sample.cols){
     mapply(calc_snpidx, df$FORMAT, df[[sample.col]])
 }
 
-print(df)
+# print(df)
+# save the dataframe with indices
+write.table(df, file = "demo.indices.vcf", sep = "\t", quote = FALSE)
+
+df <- read.delim()
+## Remove SNPs with SNP indices < 0.3 for both samples ---------
+df <- df %>% filter(!(hunchi_f.snpidx < 0.3 & hunchi_m.snpidx < 0.3))
+
+write.table(df, file = "demo.indices.filtered.vcf", sep = "\t", quote = FALSE)
+
+## Sliding window analysis -----------
+sliding_window_avg <- 
+  function(df, window_size = 4e+07, increment_size=2e+05, 
+           chr, idx_col){
+    df <- df %>% filter(X.CHROM == chr)
+    a <- min(df$POS)
+    b <- a + window_size
+    
+    results <- data.frame(midpoint = numeric(), avg_val = numeric())
+    
+    # initialize start and end indices for the sliding window
+    start_idx <- 1
+    end_idx <- 1
+    
+    # iterate through the dataframe using the sliding window
+    while (b <= max(df$POS)){
+      # move the start_idx
+      while (df$POS[start_idx] < a){
+        start_idx <- start_idx + 1
+      }
+      # move the end_idx to include all elements up to 'b'
+      while (df$POS[end_idx] <= b){
+        end_idx <- end_idx + 1
+      }
+      # filter the dataframe using the sliding window 
+      df1 <- df[start_idx:(end_idx - 1), ]
+      
+      if (nrow(df1) >= 10){
+        val <- mean(df1[[idx_col]])
+        results <- rbind(results, data.frame(midpoint = (a + b) / 2, avg_val = val))
+      }
+      # increment
+      a <- a + increment_size
+      b <- a + window_size
+    }
+    return(results)
+  }
+
 
 # Manhattan plot ---------------
 manhattan.plot <- function(chr, pos, pvalue, 
@@ -251,11 +298,24 @@ manhattan.plot <- function(chr, pos, pvalue,
 }
 
 
-# SNP index against position for each chromosome --------
-ggplot(data = df_1a, aes(x = POS/1e+06, y = X99ck.snpidx)) +
+# Plot SNP index against position for each chromosome --------
+ggplot(data = df, aes(x = POS/1e+06, y = X99ck.snpidx)) +
   geom_point(color = "blue") +
   geom_hline(aes(yintercept = 0.5), linetype = 2) + 
+  geom_line(data = results, aes(x = midpoint/1e+06, y = avg_val), 
+            color = "red") +
   labs(x = "Chromosome position (Mb)", y = "SNP index",
        title = "Chromosome 1A"
        )
-ggsave("plot.png", width = 5, height = 3)
+ggsave("plot0717_1.png", width = 5, height = 3)
+
+ggplot(data = df %>% filter(X.CHROM == "1B"), aes(x = POS/1e+06, y = dwg1.snpidx)) +
+  geom_point(color = "blue") +
+  geom_hline(aes(yintercept = 0.5), linetype = 2) + 
+  geom_line(data = sliding_window_avg(df, chr = "1B", idx_col = "dwg1.snpidx"), 
+            aes(x = midpoint/1e+06, y = avg_val), 
+            color = "red") +
+  labs(x = "Chromosome position (Mb)", y = "SNP index",
+       title = "Chromosome 1A"
+       )
+ggsave("plot0717_1.png", width = 5, height = 3)
