@@ -5,8 +5,9 @@ setwd("/home/bryce/Desktop/QTL_analysis/")
 # load the necessary libraries
 library(dplyr)
 library(ggplot2)
+library(patchwork)
 # load the dataset
-vcf <- read.delim("demo.parsed.vcf")
+vcf <- read.delim("vcf/4sample.all.parsed.vcf")
 # look at the chromosomes
 vcf %>% count(X.CHROM)
 # remove chromosome 'Un'
@@ -50,14 +51,32 @@ for (sample.col in sample.cols){
 }
 
 # print(df)
+
 # save the dataframe with indices
-write.table(df, file = "demo.indices.vcf", sep = "\t", quote = FALSE)
+write.table(df, file = "KN1.T1-1.581.indices.vcf", sep = "\t", quote = FALSE)
 
-df <- read.delim()
-## Remove SNPs with SNP indices < 0.3 for both samples ---------
-df <- df %>% filter(!(hunchi_f.snpidx < 0.3 & hunchi_m.snpidx < 0.3))
+# inspect the distribution of snp indices
+df <- read.delim('KN1.T1-1.581.indices.vcf')
+summary(df)
+p1 <- ggplot(data = df, aes(x = M_22W581.2.snpidx)) + 
+  stat_density()
 
-write.table(df, file = "demo.indices.filtered.vcf", sep = "\t", quote = FALSE)
+p2 <- ggplot(data = df, aes(x = W_22W581.snpidx)) + 
+  stat_density()
+
+ggsave("idx_distribution.png", p1/p2, width = 5, height = 5)
+
+# the correlation of two indices
+# ggplot(df, aes(x = M_22W581.2.snpidx, y = W_22W581.snpidx)) +
+#   geom_point()
+
+## Filter SNPs ---------
+# remove NAs
+df <- na.omit(df)
+# remove SNPs with SNP indices < 0.3 for both samples 
+df <- df %>% filter(!(M_22W581.2.snpidx < 0.3 & W_22W581.snpidx < 0.3))
+
+write.table(df, file = "KN1.T1-1.581.indices.filtered.vcf", sep = "\t", quote = FALSE)
 
 ## Sliding window analysis -----------
 sliding_window_avg <- 
@@ -97,13 +116,40 @@ sliding_window_avg <-
     return(results)
   }
 
+## Plot SNP index against position for each chromosome --------
+# retrieve dataframe from file generated at previous step
+df <- read.delim(file = 'KN1.T1-1.581.indices.filtered.vcf')
+p1 <- ggplot(data = df %>% filter(X.CHROM == "1B"), 
+             aes(x = POS/1e+06, y = M_22W581.2.snpidx)) +
+  geom_point(color = "blue") +
+  geom_hline(aes(yintercept = 0.5), linetype = 2) + 
+  geom_line(data = sliding_window_avg(df, chr = "1B", idx_col = "M_22W581.2.snpidx"), 
+            aes(x = midpoint/1e+06, y = avg_val), 
+            color = "red") +
+  labs(x = "Chromosome position (Mb)", y = "SNP index",
+       title = "Chromosome 1B"
+       )
+# ggsave("plot0717_1.png", width = 5, height = 3)
 
+p2 <- ggplot(data = df %>% filter(X.CHROM == "1B"), 
+       aes(x = POS/1e+06, y = W_22W581.snpidx)) +
+  geom_point(color = "blue") +
+  geom_hline(aes(yintercept = 0.5), linetype = 2) + 
+  geom_line(data = sliding_window_avg(df, chr = "1B", idx_col = "W_22W581.snpidx"), 
+            aes(x = midpoint/1e+06, y = avg_val), 
+            color = "red") +
+  labs(x = "Chromosome position (Mb)", y = "SNP index",
+       title = "Chromosome 1B"
+       )
+# ggsave("plot0717_1.png", width = 5, height = 3)
+p <- p1 / p2
+ggsave("chr1b.png", p, width = 5, height = 5)
 # Manhattan plot ---------------
 manhattan.plot <- function(chr, pos, pvalue, 
-                         sig.level=NA, annotate=NULL, ann.default=list(),
-                         should.thin=T, thin.pos.places=2, thin.logp.places=2, 
-                         xlab="Chromosome", ylab=expression(-log[10](p-value)),
-                         col=c("gray","darkgray"), panel.extra=NULL, pch=20, cex=0.8,...) {
+                           sig.level=NA, annotate=NULL, ann.default=list(),
+                           should.thin=T, thin.pos.places=2, thin.logp.places=2, 
+                           xlab="Chromosome", ylab=expression(-log[10](p-value)),
+                           col=c("gray","darkgray"), panel.extra=NULL, pch=20, cex=0.8,...) {
   
   if (length(chr)==0) stop("chromosome vector is empty")
   if (length(pos)==0) stop("position vector is empty")
@@ -297,25 +343,3 @@ manhattan.plot <- function(chr, pos, pvalue,
   );
 }
 
-
-# Plot SNP index against position for each chromosome --------
-ggplot(data = df, aes(x = POS/1e+06, y = X99ck.snpidx)) +
-  geom_point(color = "blue") +
-  geom_hline(aes(yintercept = 0.5), linetype = 2) + 
-  geom_line(data = results, aes(x = midpoint/1e+06, y = avg_val), 
-            color = "red") +
-  labs(x = "Chromosome position (Mb)", y = "SNP index",
-       title = "Chromosome 1A"
-       )
-ggsave("plot0717_1.png", width = 5, height = 3)
-
-ggplot(data = df %>% filter(X.CHROM == "1B"), aes(x = POS/1e+06, y = dwg1.snpidx)) +
-  geom_point(color = "blue") +
-  geom_hline(aes(yintercept = 0.5), linetype = 2) + 
-  geom_line(data = sliding_window_avg(df, chr = "1B", idx_col = "dwg1.snpidx"), 
-            aes(x = midpoint/1e+06, y = avg_val), 
-            color = "red") +
-  labs(x = "Chromosome position (Mb)", y = "SNP index",
-       title = "Chromosome 1A"
-       )
-ggsave("plot0717_1.png", width = 5, height = 3)
