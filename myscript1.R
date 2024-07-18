@@ -12,19 +12,25 @@ vcf <- read.delim("vcf/4sample.all.parsed.vcf")
 vcf %>% count(X.CHROM)
 # remove chromosome 'Un'
 vcf <- vcf %>% filter(X.CHROM != "Un")
-# look at the ref allele summary
-vcf %>% count(REF, sort = TRUE)
-# look at the alt allele summary
-vcf %>% count(ALT, sort = TRUE)
-# remove SNPs that's not bi-allele
-vcf_bi <- vcf %>% filter(!grepl(",", vcf$ALT))
+# look at the unique values of REF and ALT
+vcf %>% count(REF, ALT, sort = TRUE)
+# remove anything that's not bi-allele
+vcf <- vcf %>% filter(!grepl(",", vcf$ALT))
+# remove indels
+vcf <- vcf %>% filter(nchar(REF) == nchar(ALT))
 # remove SNPs without 'AD' information
-vcf_bi_ad <- vcf_bi %>% filter(grepl("AD", vcf_bi$FORMAT))
+# vcf_bi_ad <- vcf_bi %>% filter(grepl("AD", vcf_bi$FORMAT))
+# save the filtered dataframe
+write.table(df, file = "KN1.T1-1.581.filtered.vcf", sep = "\t", quote = FALSE)
 
 ## Calculate the SNP index using the 'AD' information -----------
 # make a copy of the filtered dataframe
-df <- vcf_bi_ad
-# function to extract the value from a sample column
+df <- vcf %>% select(X.CHROM, POS, FORMAT, M_22W581.2, W_22W581)
+
+# remove the original dataframes
+rm(vcf)
+
+# function to calculate snp index from a sample column
 calc_snpidx <- function(format, sample){
   # split the format and sample strings
   format.parts <- unlist(strsplit(format, ":"))
@@ -41,6 +47,23 @@ calc_snpidx <- function(format, sample){
   return(ad.nums[2] / sum(ad.nums))
 }
 
+# function to calculate the total read depth from a sample column
+calc_depth <- function(format, sample){
+  # split the format and sample strings
+  format.parts <- unlist(strsplit(format, ":"))
+  sample.parts <- unlist(strsplit(sample, ":"))
+  
+  # find the position of 'AD' in the format
+  ad.idx <- which(format.parts == "AD")
+  # find the 'AD' value from the sample
+  ad.val <- sample.parts[ad.idx]
+  # split the value by comma and convert to numeric
+  ad.nums <- as.numeric(unlist(strsplit(ad.val, "[,]")))
+  
+  # calculate and return the SNP index
+  return(sum(ad.nums))
+}
+
 # identify the sample columns
 sample.cols <- names(df)[(which(names(df) == "FORMAT") + 1):ncol(df)]
 
@@ -48,16 +71,17 @@ sample.cols <- names(df)[(which(names(df) == "FORMAT") + 1):ncol(df)]
 for (sample.col in sample.cols){
   df[[paste0(sample.col, ".snpidx")]] <- 
     mapply(calc_snpidx, df$FORMAT, df[[sample.col]])
+  df[[paste0(sample.col, ".depth")]] <- 
+    mapply(calc_depth, df$FORMAT, df[[sample.col]])
 }
 
 # print(df)
 
-# save the dataframe with indices
-write.table(df, file = "KN1.T1-1.581.indices.vcf", sep = "\t", quote = FALSE)
+# save the dataframe
+write.table(df, file = "MW581.indices.depths.vcf", sep = "\t", quote = FALSE)
 
+## Distributions -----------
 # inspect the distribution of snp indices
-df <- read.delim('KN1.T1-1.581.indices.vcf')
-summary(df)
 p1 <- ggplot(data = df, aes(x = M_22W581.2.snpidx)) + 
   stat_density()
 
@@ -65,6 +89,23 @@ p2 <- ggplot(data = df, aes(x = W_22W581.snpidx)) +
   stat_density()
 
 ggsave("idx_distribution.png", p1/p2, width = 5, height = 5)
+
+# inspect the distribution of read depth
+# df <- read.delim('KN1.T1-1.581.indices.vcf')
+# summary(df)
+p1 <- ggplot(data = df, aes(x = M_22W581.2.depth)) + 
+  stat_density() + 
+  xlim(0, 250) + 
+  geom_vline(aes(xintercept = 7), color = "red")
+print(p1)
+
+p2 <- ggplot(data = df, aes(x = W_22W581.depth)) + 
+  stat_density() + 
+  xlim(0, 250) +
+  geom_vline(aes(xintercept = 7), color = "red")
+
+
+ggsave("depth_distribution.png", p1/p2, width = 5, height = 5)
 
 # the correlation of two indices
 # ggplot(df, aes(x = M_22W581.2.snpidx, y = W_22W581.snpidx)) +
@@ -74,17 +115,19 @@ ggsave("idx_distribution.png", p1/p2, width = 5, height = 5)
 # remove NAs
 df <- na.omit(df)
 # remove SNPs with SNP indices < 0.3 for both samples 
-df <- df %>% filter(!(M_22W581.2.snpidx < 0.3 & W_22W581.snpidx < 0.3))
+df <- df %>% filter(if_any(ends_with("snpidx"), ~ . >= 0.3))
+# remove SNPs with low read depth (<7)
+df <- df %>% filter(if_all(ends_with("depth"), ~ . >= 7))
 
-write.table(df, file = "KN1.T1-1.581.indices.filtered.vcf", sep = "\t", quote = FALSE)
+write.table(df, file = "MW581.indices.depths.filtered.vcf", sep = "\t", quote = FALSE)
 
 ## Sliding window analysis -----------
 sliding_window_avg <- 
   function(df, window_size = 4e+07, increment_size=2e+05, 
            chr, idx_col){
     df <- df %>% filter(X.CHROM == chr)
-    a <- min(df$POS)
-    b <- a + window_size
+    b <- window_size/2
+    a <- b - window_size
     
     results <- data.frame(midpoint = numeric(), avg_val = numeric())
     
@@ -93,13 +136,13 @@ sliding_window_avg <-
     end_idx <- 1
     
     # iterate through the dataframe using the sliding window
-    while (b <= max(df$POS)){
+    while (a <= max(df$POS) - window_size/2){
       # move the start_idx
       while (df$POS[start_idx] < a){
         start_idx <- start_idx + 1
       }
       # move the end_idx to include all elements up to 'b'
-      while (df$POS[end_idx] <= b){
+      while (end_idx <= nrow(df) && df$POS[end_idx] <= b){
         end_idx <- end_idx + 1
       }
       # filter the dataframe using the sliding window 
@@ -110,41 +153,61 @@ sliding_window_avg <-
         results <- rbind(results, data.frame(midpoint = (a + b) / 2, avg_val = val))
       }
       # increment
-      a <- a + increment_size
-      b <- a + window_size
+      b <- b + increment_size
+      a <- b - window_size
     }
     return(results)
   }
 
 ## Plot SNP index against position for each chromosome --------
 # retrieve dataframe from file generated at previous step
-df <- read.delim(file = 'KN1.T1-1.581.indices.filtered.vcf')
-p1 <- ggplot(data = df %>% filter(X.CHROM == "1B"), 
-             aes(x = POS/1e+06, y = M_22W581.2.snpidx)) +
-  geom_point(color = "blue") +
-  geom_hline(aes(yintercept = 0.5), linetype = 2) + 
-  geom_line(data = sliding_window_avg(df, chr = "1B", idx_col = "M_22W581.2.snpidx"), 
-            aes(x = midpoint/1e+06, y = avg_val), 
-            color = "red") +
-  labs(x = "Chromosome position (Mb)", y = "SNP index",
-       title = "Chromosome 1B"
-       )
-# ggsave("plot0717_1.png", width = 5, height = 3)
+df <- read.delim(file = 'MW581.indices.depths.filtered.vcf')
+df <- df %>% mutate(MtoW.snpidx = M_22W581.2.snpidx - W_22W581.snpidx)
+for (chr in unique(df$X.CHROM)){
+  p1 <- ggplot(data = df %>% filter(X.CHROM == chr), 
+               aes(x = POS/1e+06, y = M_22W581.2.snpidx)) +
+    geom_point(color = "darkgreen", size = 0.5) +
+    geom_hline(aes(yintercept = 0.5), linetype = 4) + 
+    geom_line(data = sliding_window_avg(df, chr = chr, idx_col = "M_22W581.2.snpidx"), 
+              aes(x = midpoint/1e+06, y = avg_val), 
+              color = "red", linewidth = 1) +
+    labs(x = "Chromosome position (Mb)", y = "SNP index",
+         title = "M_22W581 bulk"
+    ) + 
+    theme(plot.title = element_text(color = "darkgreen", face = "bold"))
+  # print(p1)
+  # ggsave("plot0717_1.png", width = 5, height = 3)
+  
+  p2 <- ggplot(data = df %>% filter(X.CHROM == chr), 
+               aes(x = POS/1e+06, y = W_22W581.snpidx)) +
+    geom_point(color = "goldenrod", size = 0.5) +
+    geom_hline(aes(yintercept = 0.5), linetype = 4) + 
+    geom_line(data = sliding_window_avg(df, chr = chr, idx_col = "W_22W581.snpidx"), 
+              aes(x = midpoint/1e+06, y = avg_val), 
+              color = "red", linewidth = 1) +
+    labs(x = "Chromosome position (Mb)", y = "SNP index",
+         title = "W_22W581 bulk"
+    ) + 
+    theme(plot.title = element_text(color = "goldenrod", face = "bold"))
+  # print(p2)
+  # ggsave("plot0717_1.png", width = 5, height = 3)
+  p3 <- ggplot(data = df %>% filter(X.CHROM == chr), 
+               aes(x = POS/1e+06, y = MtoW.snpidx)) +
+    geom_point(color = "darkblue", size = 0.5) +
+    geom_hline(aes(yintercept = 0), linetype = 2) + 
+    geom_line(data = sliding_window_avg(df, chr = chr, idx_col = "MtoW.snpidx"), 
+              aes(x = midpoint/1e+06, y = avg_val), 
+              color = "red", linewidth = 1) +
+    labs(x = "Chromosome position (Mb)", y = expression(paste(Delta, "(SNP index)")),
+         title = "M_22W581 - W_22W581 bulk"
+    ) + 
+    theme(plot.title = element_text(color = "darkblue", face = "bold"))
+  # print(p3)
+  p <- p1 / p2 / p3
+  ggsave(paste0("chr", chr, ".png"), p, width = 5, height = 10)
+}
 
-p2 <- ggplot(data = df %>% filter(X.CHROM == "1B"), 
-       aes(x = POS/1e+06, y = W_22W581.snpidx)) +
-  geom_point(color = "blue") +
-  geom_hline(aes(yintercept = 0.5), linetype = 2) + 
-  geom_line(data = sliding_window_avg(df, chr = "1B", idx_col = "W_22W581.snpidx"), 
-            aes(x = midpoint/1e+06, y = avg_val), 
-            color = "red") +
-  labs(x = "Chromosome position (Mb)", y = "SNP index",
-       title = "Chromosome 1B"
-       )
-# ggsave("plot0717_1.png", width = 5, height = 3)
-p <- p1 / p2
-ggsave("chr1b.png", p, width = 5, height = 5)
-# Manhattan plot ---------------
+## Manhattan plot ---------------
 manhattan.plot <- function(chr, pos, pvalue, 
                            sig.level=NA, annotate=NULL, ann.default=list(),
                            should.thin=T, thin.pos.places=2, thin.logp.places=2, 
