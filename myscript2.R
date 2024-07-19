@@ -281,6 +281,13 @@ countSNPs <- function(POS, windowSize) {
   return(out)
 }
 
+tricubeStat <- function(POS, Stat, windowSize = 2e6, ...)
+{
+  if (windowSize <= 0)
+    stop("A positive smoothing window is required")
+  stats::predict(locfit::locfit(Stat ~ locfit::lp(POS, h = windowSize, deg = 0), ...), POS)
+}
+
 simulateAlleleFreq <- function(n, pop = "F2") {
   if (pop == "F2") {
     mean(sample(
@@ -510,9 +517,128 @@ df_filt <- runQTLseqAnalysis(
   intervals = c(95, 99)
 )
 
+format_genomic <- function(...) {
+  # Format a vector of numeric values according
+  # to the International System of Units.
+  # http://en.wikipedia.org/wiki/SI_prefix
+  #
+  # Based on code by Ben Tupper
+  # https://stat.ethz.ch/pipermail/r-help/2012-January/299804.html
+  # Args:
+  #   ...: Args passed to format()
+  #
+  # Returns:
+  #   A function to format a vector of strings using
+  #   SI prefix notation
+  #
+  
+  function(x) {
+    limits <- c(1e0,   1e3, 1e6)
+    #prefix <- c("","Kb","Mb")
+    
+    # Vector with array indices according to position in intervals
+    i <- findInterval(abs(x), limits)
+    
+    # Set prefix to " " for very small values < 1e-24
+    i <- ifelse(i==0, which(limits == 1e0), i)
+    
+    paste(format(round(x/limits[i], 1),
+                 trim=TRUE, scientific=FALSE, ...)
+          #  ,prefix[i]
+    )
+  }
+}
+
+plotQTLStats <-
+  function(SNPset,
+           subset = NULL,
+           var = "nSNPs",
+           scaleChroms = TRUE,
+           line = TRUE,
+           plotIntervals = FALSE,
+           q = 0.05,
+           ...) {
+    
+    #get fdr threshold by ordering snps by pval then getting the last pval
+    #with a qval < q
+    
+    if (!all(subset %in% unique(SNPset$CHROM))) {
+      whichnot <-
+        paste(subset[base::which(!subset %in% unique(SNPset$CHROM))], collapse = ', ')
+      stop(paste0("The following are not true chromosome names: ", whichnot))
+    }
+    
+    if (!var %in% c("nSNPs", "deltaSNP"))
+      stop(
+        "Please choose one of the following variables to plot: \"nSNPs\", \"deltaSNP\""
+      )
+    
+    SNPset <-
+      if (is.null(subset)) {
+        SNPset
+      } else {
+        SNPset[SNPset$CHROM %in% subset,]
+      }
+    
+    p <- ggplot2::ggplot(data = SNPset) +
+      ggplot2::scale_x_continuous(breaks = seq(from = 0,to = max(SNPset$POS), by = 10^(floor(log10(max(SNPset$POS))))), labels = format_genomic(), name = "Genomic Position (Mb)") +
+      ggplot2::theme(plot.margin = ggplot2::margin(
+        b = 10,
+        l = 20,
+        r = 20,
+        unit = "pt"
+      ))
+    
+    if (var == "nSNPs") {
+      p <- p + ggplot2::ylab("Number of SNPs in window")
+    }
+    
+    if (var == "deltaSNP") {
+      var <- "tricubeDeltaSNP"
+      p <-
+        p + ggplot2::ylab(expression(Delta * '(SNP-index)')) +
+        ggplot2::ylim(-0.55, 0.55) +
+        ggplot2::geom_hline(yintercept = 0,
+                            color = "black",
+                            alpha = 0.4)
+      if (plotIntervals == TRUE) {
+        
+        ints_df <-
+          dplyr::select(SNPset, CHROM, POS, dplyr::matches("CI_")) %>% tidyr::gather(key = "Interval", value = "value",-CHROM,-POS)
+        
+        p <- p + ggplot2::geom_line(data = ints_df, ggplot2::aes(x = POS, y = value, color = Interval)) +
+          ggplot2::geom_line(data = ints_df, ggplot2::aes(
+            x = POS,
+            y = -value,
+            color = Interval
+          ))
+      }
+    }
+    
+    if (line) {
+      p <-
+        p + ggplot2::geom_line(ggplot2::aes(.data[["POS"]], .data[[var]]), ...)
+    }
+    
+    if (!line) {
+      p <-
+        p + ggplot2::geom_point(ggplot2::aes(.data[["POS"]], .data[[var]]), ...)
+    }
+    
+    if (scaleChroms == TRUE) {
+      p <- p + ggplot2::facet_grid(~ CHROM, scales = "free_x", space = "free_x")
+    } else {
+      p <- p + ggplot2::facet_grid(~ CHROM, scales = "free_x")    
+    }
+    p <- p + ggplot2::facet_wrap(~ CHROM, scales = "free_x", ncol = 5)
+    p
+    
+  }
+
+
 #Plot
-plotQTLStats(SNPset = df_filt, var = "Gprime", plotThreshold = TRUE, q = 0.01)
 plotQTLStats(SNPset = df_filt, var = "deltaSNP", plotIntervals = TRUE)
 
+ggplot2::ggsave("demo2.png", width = 8, height = 5)
 #export summary CSV
-getQTLTable(SNPset = df_filt, alpha = 0.01, export = TRUE, fileName = "my_BSA_QTL.csv")
+# getQTLTable(SNPset = df_filt, alpha = 0.01, export = TRUE, fileName = "my_BSA_QTL.csv")
