@@ -533,7 +533,7 @@ format_genomic <- function(...) {
   #
   
   function(x) {
-    limits <- c(1e0,   1e3, 1e6)
+    limits <- c(1e0, 1e3, 1e6)
     #prefix <- c("","Kb","Mb")
     
     # Vector with array indices according to position in intervals
@@ -548,6 +548,19 @@ format_genomic <- function(...) {
     )
   }
 }
+
+format_prefix <- 
+  function(x) {
+    limits <- c(1e0, 1e3, 1e6)
+    prefix <- c("","Kb","Mb")
+    
+    # Vector with array indices according to position in intervals
+    i <- findInterval(abs(x), limits)
+    
+    # Set prefix to " " for very small values < 1e-24
+    i <- ifelse(i==0, which(limits == 1e0), i)
+    prefix[i]
+  }
 
 plotQTLStats <-
   function(SNPset,
@@ -581,7 +594,9 @@ plotQTLStats <-
       }
     
     p <- ggplot2::ggplot(data = SNPset) +
-      ggplot2::scale_x_continuous(breaks = seq(from = 0,to = max(SNPset$POS), by = 10^(floor(log10(max(SNPset$POS))))), labels = format_genomic(), name = "Genomic Position (Mb)") +
+      ggplot2::scale_x_continuous(breaks = seq(from = 0, to = max(SNPset$POS), by = 10^(floor(log10(max(SNPset$POS))))), 
+                                  labels = format_genomic(), 
+                                  name = paste0("Genomic Position (", format_prefix(max(SNPset$POS)), ")")) +
       ggplot2::theme(plot.margin = ggplot2::margin(
         b = 10,
         l = 20,
@@ -596,7 +611,7 @@ plotQTLStats <-
     if (var == "deltaSNP") {
       var <- "tricubeDeltaSNP"
       p <-
-        p + ggplot2::ylab(expression(Delta * '(SNP-index)')) +
+        p + ggplot2::ylab(expression(Delta * " (SNP-index)")) +
         ggplot2::ylim(-0.55, 0.55) +
         ggplot2::geom_hline(yintercept = 0,
                             color = "black",
