@@ -1,31 +1,57 @@
-# store the current directory
-initial.dir <- getwd()
-# change to the new directory
-setwd("/home/bryce/Desktop/QTL_analysis/")
-# # load the necessary libraries
+#!usr/bin/env Rscript
+Args <- commandArgs(trailingOnly = TRUE)
+
+if (length(Args) < 3){
+  stop("At least three argument must be supplied (input vcf) (high bulk name) (low bulk name)", call. = FALSE)
+} else if (length(Args) == 3){
+  # default output file
+  message("using the default output file name 'out.png' ...")
+  Args[4] <- "out.png"
+}
+# # store the current directory
+# initial.dir <- getwd()
+# # change to the new directory
+# setwd("/home/bryce/Desktop/QTL_analysis/")
+# load the necessary libraries
 library(dplyr)
 library(tidyr)
-# library(ggplot2)
+library(ggplot2)
 # library(patchwork)
 library(vcfR)
 
 #load the package
-library(QTLseqr)
+#library(QTLseqr)
 
 
 #Set sample and file names
-HighBulk <- "N_CD_188"
-LowBulk <- "N_CH_188"
-file <- "demo2/demo.2.vcf"
+file <- Args[1]
+HighBulk <- Args[2]
+LowBulk <- Args[3]
 
 #Choose which chromosomes will be included in the analysis (i.e. exclude smaller contigs)
 Chroms <- expand.grid(ChrNum = 1:7, ChrLetter = c("A", "B", "D")) %>% 
   mutate(Chrom = paste0("chr", ChrNum, ChrLetter)) %>% 
   pull(Chrom)
 
+mergeBulk <- function(df, bulk) {
+  df %>% 
+    dplyr::filter(Indiv %in% bulk) %>% 
+    dplyr::select(-Indiv) %>%
+    tidyr::separate(
+      col = "AD",
+      into = c("AD_REF", "AD_ALT"),
+      sep = ",",
+      # extra = "merge",
+      convert = TRUE
+    ) %>%
+    group_by(Key) %>%
+    summarise(across(c(AD_REF, AD_ALT, DP), sum),
+              across(c(GQ), mean))
+}
+
 importFromVCF <- function(file,
-                          highBulk = character(),
-                          lowBulk = character(),
+                          highBulk,
+                          lowBulk,
                           chromList = NULL) {
   
   vcf <- vcfR::read.vcfR(file = file)
@@ -50,25 +76,12 @@ importFromVCF <- function(file,
   
   tidy_gt <- extract_gt_tidy(vcf, format_fields = c("AD", "DP", "GQ"), gt_column_prepend = "", alleles = FALSE)
   
-  SNPset <- tidy_gt %>%
-    dplyr::filter(Indiv == LowBulk) %>% dplyr::select(-Indiv) %>%
-    dplyr::left_join(dplyr::select(dplyr::filter(tidy_gt, Indiv == HighBulk),-Indiv),
+  lowBulkSNPset <- mergeBulk(tidy_gt, lowBulk)
+  highBulkSNPset <- mergeBulk(tidy_gt, highBulk)
+  SNPset <- lowBulkSNPset %>%
+    dplyr::left_join(highBulkSNPset,
                      by = "Key",
                      suffix = c(".LOW", ".HIGH")) %>%
-    tidyr::separate(
-      col = "AD.LOW",
-      into = c("AD_REF.LOW", "AD_ALT.LOW"),
-      sep = ",",
-      # extra = "merge",
-      convert = TRUE
-    ) %>%
-    tidyr::separate(
-      col = "AD.HIGH",
-      into = c("AD_REF.HIGH", "AD_ALT.HIGH"),
-      sep = ",",
-      # extra = "merge", 
-      convert = TRUE
-    ) %>%
     dplyr::full_join(x = fix, by = "Key") %>%
     dplyr::mutate(
       POS = as.numeric(POS),
@@ -85,17 +98,8 @@ importFromVCF <- function(file,
     message("Removing the following chromosomes: ", paste(unique(SNPset$CHROM)[!unique(SNPset$CHROM) %in% chromList], collapse = ", "))
     SNPset <- SNPset[SNPset$CHROM %in% chromList, ]
   }
-  as.data.frame(SNPset)
+  na.omit(as.data.frame(SNPset))
 }
-
-#Import SNP data from file
-df <-
-  importFromVCF(
-    file = file,
-    highBulk = HighBulk,
-    lowBulk = LowBulk,
-    chromList = Chroms
-  )
 
 filterSNPs <- function(SNPset,
                        refAlleleFreq,
@@ -192,7 +196,7 @@ filterSNPs <- function(SNPset,
     }
     SNPset <-
       dplyr::filter(SNPset, DP.HIGH >= minSampleDepth &
-                      SNPset$DP.LOW >= minSampleDepth)
+                      DP.LOW >= minSampleDepth)
     if (verbose) {
       message("...Filtered ", count - nrow(SNPset), " SNPs")
     }
@@ -249,16 +253,6 @@ filterSNPs <- function(SNPset,
   return(as.data.frame(SNPset))
 }
 
-#Filter SNPs based on some criteria
-df_filt <-
-  filterSNPs(
-    SNPset = df,
-    refAlleleFreq = 0.20,
-    minTotalDepth = 100,
-    maxTotalDepth = 400,
-    minSampleDepth = 40,
-    minGQ = 99
-  )
 
 countSNPs <- function(POS, windowSize) {
   nout <- length(POS)
@@ -506,17 +500,6 @@ runQTLseqAnalysis <- function(SNPset,
   
 }
 
-
-#Run QTLseq analysis
-df_filt <- runQTLseqAnalysis(
-  SNPset = df_filt,
-  windowSize = 4e7,
-  popStruc = "F2",
-  bulkSize = c(25, 25),
-  replications = 10000,
-  intervals = c(95, 99)
-)
-
 format_genomic <- function(...) {
   # Format a vector of numeric values according
   # to the International System of Units.
@@ -566,14 +549,9 @@ plotQTLStats <-
   function(SNPset,
            subset = NULL,
            var = "nSNPs",
-           scaleChroms = TRUE,
            line = TRUE,
            plotIntervals = FALSE,
-           q = 0.05,
            ...) {
-    
-    #get fdr threshold by ordering snps by pval then getting the last pval
-    #with a qval < q
     
     if (!all(subset %in% unique(SNPset$CHROM))) {
       whichnot <-
@@ -619,9 +597,19 @@ plotQTLStats <-
       if (plotIntervals == TRUE) {
         
         ints_df <-
-          dplyr::select(SNPset, CHROM, POS, dplyr::matches("CI_")) %>% tidyr::gather(key = "Interval", value = "value",-CHROM,-POS)
+          dplyr::select(SNPset, CHROM, POS, dplyr::matches("CI_")) %>% 
+          tidyr::pivot_longer(
+            cols = dplyr::matches("CI_"),
+            names_to = "Interval", 
+            values_to = "value"
+          )
         
-        p <- p + ggplot2::geom_line(data = ints_df, ggplot2::aes(x = POS, y = value, color = Interval)) +
+        p <- p + 
+          ggplot2::geom_line(data = ints_df, ggplot2::aes(
+            x = POS, 
+            y = value, 
+            color = Interval
+          )) +
           ggplot2::geom_line(data = ints_df, ggplot2::aes(
             x = POS,
             y = -value,
@@ -640,20 +628,65 @@ plotQTLStats <-
         p + ggplot2::geom_point(ggplot2::aes(.data[["POS"]], .data[[var]]), ...)
     }
     
-    if (scaleChroms == TRUE) {
-      p <- p + ggplot2::facet_grid(~ CHROM, scales = "free_x", space = "free_x")
-    } else {
-      p <- p + ggplot2::facet_grid(~ CHROM, scales = "free_x")    
-    }
     p <- p + ggplot2::facet_wrap(~ CHROM, scales = "free_x", ncol = 5)
     p
-    
   }
 
+#Set sample and file names
+HighBulk <- "WT8214DPool"
+LowBulk <- "MT8214UPool"
+file <- "TC-CQZ-20220810-001-LJ008-pepper-vcf/ALL.vcf.gz"
+
+HighBulk <- c("HH", "HH-1", "HH-2", "HH-3")
+LowBulk <- c("LH", "LH-1", "LH-2", "LH-3", "LH_6")
+file <- "demo1/demo.vcf.gz"
+
+#Choose which chromosomes will be included in the analysis (i.e. exclude smaller contigs)
+Chroms <- expand.grid(ChrNum = 1:7, ChrLetter = c("A", "B", "D")) %>% 
+  mutate(Chrom = paste0("chr", ChrNum, ChrLetter)) %>% 
+  pull(Chrom)
+
+#Import SNP data from file
+df <-
+  importFromVCF(
+    file = file,
+    highBulk = HighBulk,
+    lowBulk = LowBulk,
+    chromList = Chroms
+  )
+
+#Filter SNPs based on some criteria
+df_filt <-
+  filterSNPs(
+    SNPset = df,
+    maxTotalDepth = 250,
+    minSampleDepth = 7,
+    #minGQ = 99
+  )
+
+ggplot(data = df) + 
+  geom_histogram(aes(x = DP.HIGH + DP.LOW)) + 
+  xlim(0,1000)
+
+ggplot(data = df) +
+  geom_histogram(aes(x = REF_FRQ))
+
+#Run QTLseq analysis
+df_filt <- runQTLseqAnalysis(
+  SNPset = df_filt,
+  windowSize = 4e7,
+  popStruc = "F2",
+  bulkSize = c(25, 25),
+  replications = 10000,
+  intervals = c(95, 99)
+)
 
 #Plot
 plotQTLStats(SNPset = df_filt, var = "deltaSNP", plotIntervals = TRUE)
 
-ggplot2::ggsave("demo2.png", width = 8, height = 5)
+ggplot2::ggsave(Args[4], width = 8, height = 5)
 #export summary CSV
 # getQTLTable(SNPset = df_filt, alpha = 0.01, export = TRUE, fileName = "my_BSA_QTL.csv")
+
+# change back to the original directory
+# setwd(initial.dir)
