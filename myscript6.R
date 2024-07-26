@@ -111,24 +111,19 @@ outputCSV <- opt$outputCSV
 
 importFromVCF <- function(file,
                           highBulk,
-                          lowBulk){
-  command <- paste("bcftools view -m2 -M2", "-s", paste(c(highBulk, lowBulk), collapse = ","),
+                          lowBulk,
+                          chromList = NULL){
+  command <- paste("bcftools view -m2 -M2", 
+                   "-s", paste(c(highBulk, lowBulk), collapse = ","),
+                   "-r", paste(chromList, collapse = ","),
                    file,
                    "|", 
-                   "bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT[\\t%AD]\\n'")
-  df <- readr::read_tsv(pipe(command), col_names = c("CHROM", "POS", "REF", "ALT", "AD.HIGH", "AD.LOW")) %>%
-    tidyr::separate(
-      col = AD.HIGH,
-      into = c("AD_REF.HIGH", "AD_ALT.HIGH"),
-      sep = ",",
-      convert = T
-    ) %>%
-    tidyr::separate(
-      col = AD.LOW,
-      into = c("AD_REF.LOW", "AD_ALT.LOW"),
-      sep = ",",
-      convert = T
-    ) %>% dplyr::mutate(
+                   "bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT[\\t%AD]\\n'",
+                   "|",
+                   "awk -F'\t' '{split($5,adh,\",\"); split($6,adl,\",\"); print $1, $2, $3, $4, adh[1], adh[2], adl[1], adl[2]}'")
+  df <- readr::read_delim(pipe(command), col_names = c("CHROM", "POS", "REF", "ALT", 
+                                                       "AD_REF.HIGH", "AD_ALT.HIGH", "AD_REF.LOW","AD_ALT.LOW")) %>% 
+    dplyr::mutate(
       DP.HIGH = AD_REF.HIGH + AD_ALT.HIGH,
       DP.LOW = AD_REF.LOW + AD_ALT.LOW
     ) %>% 
