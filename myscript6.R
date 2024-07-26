@@ -113,12 +113,13 @@ importFromVCF <- function(file,
                           highBulk,
                           lowBulk,
                           chromList = NULL){
-  command <- paste("bcftools view -m2 -M2", 
-                   "-s", paste(c(highBulk, lowBulk), collapse = ","),
-                   "-r", paste(chromList, collapse = ","),
-                   file,
-                   "|", 
-                   "bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT[\\t%AD]\\n'",
+  # Build bcftools command
+  samples <- paste(c(highBulk, lowBulk), collapse = ",")
+  regions <- if (!is.null(chromList)) paste(chromList, collapse = ",") else ""
+  command <- sprintf("bcftools view -m2 -M2 -s %s -r %s %s | bcftools query -f '%%CHROM\\t%%POS\\t%%REF\\t%%ALT[\\t%%AD]\\n'", 
+                     samples, regions, file)
+
+  command <- paste(command,
                    "|",
                    "awk -F'\t' '{split($5,adh,\",\"); split($6,adl,\",\"); print $1, $2, $3, $4, adh[1], adh[2], adl[1], adl[2]}'")
   df <- readr::read_delim(pipe(command), col_names = c("CHROM", "POS", "REF", "ALT", 
