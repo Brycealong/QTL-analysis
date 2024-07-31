@@ -1,9 +1,12 @@
 #!usr/bin/env Rscript
 
 # load the necessary libraries
-if (!require("tidyverse", character.only = T)) install.packages("tidyverse")
-if (!require("argparse", character.only = T)) install.packages("argparse")
-if (!require("patchwork", character.only = T)) install.packages("patchwork")
+if (!require("tidyverse", quietly = TRUE)) 
+  install.packages("tidyverse")
+if (!require("argparse", quietly = TRUE)) 
+  install.packages("argparse")
+if (!require("patchwork", quietly = TRUE)) 
+  install.packages("patchwork")
 suppressPackageStartupMessages(
   {
     library(tidyverse)
@@ -34,7 +37,7 @@ parser$add_argument("-c", "--chrom", type="character", nargs = "+",
 parser$add_argument("-o", "--out", default = "out",
                     help="Output directory. Specified name can exist.",
                     metavar="<DIR>")
-parser$add_argument("-w", "--window", default=2000, type="integer",
+parser$add_argument("-w", "--window", default=20000, type="integer",
                     help="Window size (kb). [%(default)s]",
                     metavar="<INT>")
 parser$add_argument("-ms", "--min-SNPindex", default=0.3, type="double",
@@ -69,10 +72,13 @@ if (is.null(args$vcf) || is.null(args$highbulk) || is.null(args$lowbulk)) {
 
 if (is.null(args$chrom)){
   print("Chromosome list not provided. Using all the chromosomes in VCF file...")
-  print("Highly recommend using `bcftools query -f'%CHROM\\n' [file.vcf.gz] | uniq -c` to check any chromosomes unwanted.")
+  cat("Highly recommend using `bcftools query -f'%CHROM\\n' [file.vcf.gz] | uniq -c` to check any chromosomes unwanted.")
+  print()
 }
 
-
+print(paste("Using window size", args$window, "Kb..."))
+cat("Highly recommend using `bcftools query -f'%POS\\n' file.bcf | sort -n | awk 'NR==1{min=$1} {max=$1} END{print \"Min: \" min \"Max: \" max}'` to check the position range and select the window size accordingly.")
+print()
 
 importFromVCF <- function(file,
                           highBulk,
@@ -366,12 +372,19 @@ plotQTLStats <-
   }
 
 # log the process
+
+if (!dir.exists(args$out)){
+  print(paste0("Output directory doesn't exist. Creating output directory ", args$out, "..."))
+  dir.create(args$out, recursive = T)
+} else {
+  print("Output directory already exists.")
+}
+
 log_file <- file.path(args$out, "analysis.log")
 log_con <- file(log_file, open = "wt")
 sink(log_con, split = T) #`tee`-wise 
 
-print(paste0("Creating output directory ", args$out, "..."))
-dir.create(args$out, recursive = T)
+
 df <- importFromVCF(
   args$vcf, 
   highBulk = args$highbulk, 
