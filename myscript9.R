@@ -66,7 +66,7 @@ if (is.null(args$vcf) || is.null(args$highbulk) || is.null(args$lowbulk)) {
 
 if (is.null(args$chrom))
   message("Chromosome list not provided. Using all the chromosomes in VCF file...\n",
-  "Highly recommend using `bcftools query -f'%CHROM\\n' [file.vcf.gz] | uniq -c` to check any chromosomes unwanted.")
+          "Highly recommend using `bcftools query -f'%CHROM\\n' [file.vcf.gz] | uniq -c` to check any chromosomes unwanted.")
 
 importFromVCF <- function(file,
                           highBulk,
@@ -103,38 +103,38 @@ importFromVCF <- function(file,
         message("Removing the following chromosomes: ", paste(unique(SNPset$CHROM)[!unique(SNPset$CHROM) %in% chromList], collapse = ", "))
         SNPset <- SNPset[SNPset$CHROM %in% chromList, ]
       }
-    } else {
-      SNPset <- SNPset %>%
-        dplyr::select(CHROM, POS, REF, ALT, FORMAT, all_of(c(highBulk, lowBulk))) %>%
-        dplyr::filter(!grepl(",", ALT)) %>% # remove multi-allelic
-        dplyr::mutate(AD.HIGH = purrr::map2_chr(FORMAT, .data[[highBulk]], extractAD)) %>%
-        dplyr::mutate(AD.LOW = purrr::map2_chr(FORMAT, .data[[lowBulk]], extractAD)) %>%
-        dplyr::select(!FORMAT) %>%
-        dplyr::select(!all_of(c(highBulk, lowBulk))) %>%
-        tidyr::separate(
-          col = AD.HIGH,
-          into = c("AD_REF.HIGH", "AD_ALT.HIGH"),
-          sep = ",",
-          convert = T
-        ) %>%
-        tidyr::separate(
-          col = AD.LOW,
-          into = c("AD_REF.LOW", "AD_ALT.LOW"),
-          sep = ",",
-          convert = T
-        ) %>%
-        dplyr::mutate(
-          DP.HIGH = AD_REF.HIGH + AD_ALT.HIGH,
-          DP.LOW = AD_REF.LOW + AD_ALT.LOW
-        ) %>%
-        dplyr::mutate(
-          SNPindex.HIGH = AD_ALT.HIGH / DP.HIGH,
-          SNPindex.LOW = AD_ALT.LOW / DP.LOW,
-          REF_FRQ = (AD_REF.HIGH + AD_REF.LOW) / (DP.HIGH + DP.LOW),
-          deltaSNP = SNPindex.HIGH - SNPindex.LOW
-        ) %>%
-        dplyr::mutate_all(~ ifelse(is.na(.), 0, .))
     }
+    
+    SNPset <- SNPset %>%
+      dplyr::select(CHROM, POS, REF, ALT, FORMAT, all_of(c(highBulk, lowBulk))) %>%
+      dplyr::filter(!grepl(",", ALT)) %>% # remove multi-allelic
+      dplyr::mutate(AD.HIGH = purrr::map2_chr(FORMAT, .data[[highBulk]], extractAD)) %>%
+      dplyr::mutate(AD.LOW = purrr::map2_chr(FORMAT, .data[[lowBulk]], extractAD)) %>%
+      dplyr::select(!FORMAT) %>%
+      dplyr::select(!all_of(c(highBulk, lowBulk))) %>%
+      tidyr::separate(
+        col = AD.HIGH,
+        into = c("AD_REF.HIGH", "AD_ALT.HIGH"),
+        sep = ",",
+        convert = T
+      ) %>%
+      tidyr::separate(
+        col = AD.LOW,
+        into = c("AD_REF.LOW", "AD_ALT.LOW"),
+        sep = ",",
+        convert = T
+      ) %>%
+      dplyr::mutate(
+        DP.HIGH = AD_REF.HIGH + AD_ALT.HIGH,
+        DP.LOW = AD_REF.LOW + AD_ALT.LOW
+      ) %>%
+      dplyr::mutate(
+        SNPindex.HIGH = AD_ALT.HIGH / DP.HIGH,
+        SNPindex.LOW = AD_ALT.LOW / DP.LOW,
+        REF_FRQ = (AD_REF.HIGH + AD_REF.LOW) / (DP.HIGH + DP.LOW),
+        deltaSNP = SNPindex.HIGH - SNPindex.LOW
+      ) %>%
+      dplyr::mutate_all(~ ifelse(is.na(.), 0, .))
     SNPset
   }
 }
@@ -164,7 +164,7 @@ filterSNPs <- function(SNPset,
     }
     count <- nrow(SNPset)
   }
-
+  
   # Filter by total reference allele frequency
   if (!is.null(refAlleleFreq)) {
     if (verbose) {
@@ -349,7 +349,7 @@ plotQTLStats <-
       ggplot2::theme_bw() +
       ggplot2::theme(panel.grid = element_blank()) +
       ggplot2::ylab(expression(Delta * " (SNP-index)"))
-      
+    
   }
 message("Creating output directory ", args$out, "...")
 dir.create(args$out, recursive = T)
