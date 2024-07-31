@@ -1,6 +1,9 @@
 #!usr/bin/env Rscript
 
 # load the necessary libraries
+if (!require("tidyverse", character.only = T)) install.packages("tidyverse")
+if (!require("argparse", character.only = T)) install.packages("argparse")
+if (!require("patchwork", character.only = T)) install.packages("patchwork")
 suppressPackageStartupMessages(
   {
     library(tidyverse)
