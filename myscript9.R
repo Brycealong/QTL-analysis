@@ -19,14 +19,14 @@ parser <- ArgumentParser()
 parser$add_argument("-v", "--vcf",
                     help="VCF file. This VCF file must have AD field.",
                     metavar="<VCF>")
-parser$add_argument("--highbulk",
-                    help="high bulk name",
+parser$add_argument("-b1", "--highbulk",
+                    help="High bulk name.",
                     metavar="<CHR>")
-parser$add_argument("--lowbulk", 
-                    help="low bulk name",
+parser$add_argument("-b2", "--lowbulk", 
+                    help="Low bulk name",
                     metavar="<CHR>")
-parser$add_argument("--chrom", type="character", nargs = "+",
-                    help="a list of chromosomes to be included in the analysis, separated by space",
+parser$add_argument("-c", "--chrom", type="character", nargs = "+",
+                    help="A list of chromosomes to be included in the analysis, separated by space",
                     metavar="<CHR>")
 parser$add_argument("-o", "--out", default = "out",
                     help="Output directory. Specified name can exist.",
@@ -34,17 +34,17 @@ parser$add_argument("-o", "--out", default = "out",
 parser$add_argument("-w", "--window", default=2000, type="integer",
                     help="Window size (kb). [%(default)s]",
                     metavar="<INT>")
-parser$add_argument("--min-SNPindex", default=0.3, type="double",
-                    help="Cutoff of minimum SNP-index for clear results. [%(default)s]",
+parser$add_argument("-ms", "--min-SNPindex", default=0.3, type="double",
+                    help="Cutoff of minimum SNP-index. [%(default)s]",
                     metavar="<DOUBLE>")
-parser$add_argument("--ref-frq", default=0.3, type="double",
-                    help="Cutoff of reference allele frequency. Range will be [%(default)s] to [1 - %(default)s].",
+parser$add_argument("-rf", "--ref-frq", default=0.3, type="double",
+                    help="Cutoff of reference allele frequency. Range will be [rf] to [1 - rf]. [%(default)s]",
                     metavar="<DOUBLE>")
 parser$add_argument("-d", "--min-depth", default=8, type="integer",
-                    help="Minimum depth of variants which will be used. [%(default)s]",
+                    help="Minimum depth of variants. [%(default)s]",
                     metavar="<INT>")
 parser$add_argument("-D", "--max-depth", default=250, type="integer",
-                    help="Maximum depth of variants which will be used. [%(default)s]",
+                    help="Maximum depth of variants. [%(default)s]",
                     metavar="<INT>")
 parser$add_argument("--fig-width", type = "double", default = 10.0, 
                     help = "Width allocated in chromosome figure. [%(default)s]",
@@ -64,9 +64,12 @@ if (is.null(args$vcf) || is.null(args$highbulk) || is.null(args$lowbulk)) {
   stop("At least three arguments must be supplied (input VCF file , high bulk name, low bulk name).")
 }
 
-if (is.null(args$chrom))
-  message("Chromosome list not provided. Using all the chromosomes in VCF file...\n",
-          "Highly recommend using `bcftools query -f'%CHROM\\n' [file.vcf.gz] | uniq -c` to check any chromosomes unwanted.")
+if (is.null(args$chrom)){
+  print("Chromosome list not provided. Using all the chromosomes in VCF file...")
+  print("Highly recommend using `bcftools query -f'%CHROM\\n' [file.vcf.gz] | uniq -c` to check any chromosomes unwanted.")
+}
+
+
 
 importFromVCF <- function(file,
                           highBulk,
@@ -84,7 +87,7 @@ importFromVCF <- function(file,
     return(ad.val)
   }
   
-  message("Reading and processing VCF file...")
+  print("Reading and processing VCF file...")
   SNPset <- readr::read_delim(file, comment = "##", show_col_types = F) %>%
     dplyr::rename(CHROM = "#CHROM")
   
@@ -100,7 +103,10 @@ importFromVCF <- function(file,
           paste(chromList[base::which(!chromList %in% unique(SNPset$CHROM))], collapse = ', ')
         stop(paste0("The following are not true chromosome names: ", whichnot))
       } else {
-        message("Removing the following chromosomes: ", paste(unique(SNPset$CHROM)[!unique(SNPset$CHROM) %in% chromList], collapse = ", "))
+        print(paste0(
+          "Removing the following chromosomes: ", 
+          paste(unique(SNPset$CHROM)[!unique(SNPset$CHROM) %in% chromList], collapse = ", ")
+        ))
         SNPset <- SNPset[SNPset$CHROM %in% chromList, ]
       }
     }
@@ -152,15 +158,15 @@ filterSNPs <- function(SNPset,
   # Filter by total reference allele frequency
   if (!is.null(minSNPindex)) {
     if (verbose) {
-      message(
+      print(paste0(
         "Filtering by either sample SNP index >= ",
         minSNPindex
-      )
+      ))
     }
     SNPset <- SNPset %>% 
       dplyr::filter(SNPindex.HIGH >= minSNPindex | SNPindex.LOW >= minSNPindex)
     if (verbose) {
-      message("...Filtered ", count - nrow(SNPset), " SNPs")
+      print(paste0("...Filtered ", count - nrow(SNPset), " SNPs"))
     }
     count <- nrow(SNPset)
   }
@@ -168,17 +174,17 @@ filterSNPs <- function(SNPset,
   # Filter by total reference allele frequency
   if (!is.null(refAlleleFreq)) {
     if (verbose) {
-      message(
+      print(paste0(
         "Filtering by reference allele frequency: ",
         refAlleleFreq,
         " <= REF_FRQ <= ",
         1 - refAlleleFreq
-      )
+      ))
     }
     SNPset <- dplyr::filter(SNPset, SNPset$REF_FRQ <= 1 - refAlleleFreq &
                               SNPset$REF_FRQ >= refAlleleFreq)
     if (verbose) {
-      message("...Filtered ", count - nrow(SNPset), " SNPs")
+      print(paste0("...Filtered ", count - nrow(SNPset), " SNPs"))
     }
     count <- nrow(SNPset)
   }
@@ -186,14 +192,14 @@ filterSNPs <- function(SNPset,
   # Filter by min read depth in either sample
   if (!is.null(minSampleDepth)) {
     if (verbose) {
-      message("Filtering by per sample read depth: DP >= ",
-              minSampleDepth)
+      print(paste0("Filtering by per sample read depth: DP >= ",
+             minSampleDepth))
     }
     SNPset <-
       dplyr::filter(SNPset, DP.HIGH >= minSampleDepth &
                       DP.LOW >= minSampleDepth)
     if (verbose) {
-      message("...Filtered ", count - nrow(SNPset), " SNPs")
+      print(paste0("...Filtered ", count - nrow(SNPset), " SNPs"))
     }
     count <- nrow(SNPset)
   }
@@ -201,27 +207,27 @@ filterSNPs <- function(SNPset,
   # Filter by max read depth in either sample
   if (!is.null(maxSampleDepth)) {
     if (verbose) {
-      message("Filtering by per sample read depth: DP <= ",
-              maxSampleDepth)
+      print(paste0("Filtering by per sample read depth: DP <= ",
+             maxSampleDepth))
     }
     SNPset <-
       dplyr::filter(SNPset, DP.HIGH <= maxSampleDepth &
                       DP.LOW <= maxSampleDepth)
     if (verbose) {
-      message("...Filtered ", count - nrow(SNPset), " SNPs")
+      print(paste0("...Filtered ", count - nrow(SNPset), " SNPs"))
     }
     count <- nrow(SNPset)
   }
   
   if (verbose) {
-    message(
+    print(paste0(
       "Original SNP number: ",
       org_count,
       ", Filtered: ",
       org_count - count,
       ", Remaining: ",
       count
-    )
+    ))
   }
   return(as.data.frame(SNPset))
 }
@@ -238,7 +244,7 @@ tricubeStat <- function(POS, Stat, windowSize)
 
 runQTLseqAnalysis <- function(SNPset, windowSize){
   
-  message("Calculating tricube smoothed delta SNP index...")
+  print("Calculating tricube smoothed delta SNP index...")
   return(SNPset %>%
            dplyr::group_by(CHROM) %>%
            dplyr::mutate(tricubeDeltaSNP = tricubeStat(POS = POS, Stat = deltaSNP, windowSize))
@@ -330,7 +336,8 @@ plotQTLManh <-
         legend.position = "none",
         axis.text.x = element_text(angle = 45, size = 8, vjust = 0.5),
         axis.ticks.x = element_blank(),
-        panel.grid = element_blank()
+        panel.grid = element_blank(),
+        panel.grid.major.y = element_line(linetype = "dashed")
       )
     p
   }
@@ -347,11 +354,20 @@ plotQTLStats <-
                                   labels = format_genomic(), 
                                   name = paste0(chr, " (", format_prefix(max(chrset$POS)), ")")) +
       ggplot2::theme_bw() +
-      ggplot2::theme(panel.grid = element_blank()) +
+      ggplot2::theme(
+        panel.grid = element_blank(),
+        panel.grid.major.y = element_line(linetype = "dashed")
+        ) +
       ggplot2::ylab(expression(Delta * " (SNP-index)"))
     
   }
-message("Creating output directory ", args$out, "...")
+
+# log the process
+log_file <- file.path(args$out, "analysis.log")
+log_con <- file(log_file, open = "wt")
+sink(log_con, split = T) #`tee`-wise 
+
+print(paste0("Creating output directory ", args$out, "..."))
 dir.create(args$out, recursive = T)
 df <- importFromVCF(
   args$vcf, 
@@ -375,10 +391,10 @@ p5 <- ggplot(data = df) +
   xlim(0,1000)
 
 p <- p1/(p2|p3)/(p4|p5)
-
+print("Saving distribution plot...")
 ggplot2::ggsave(file.path(args$out, "distribution.png"), p, 
                 width = args$fig_width, height = args$fig_height)
-
+print("Saving raw SNP index file...")
 readr::write_tsv(df, file = file.path(args$out, "SNPindex.tsv"))
 df_filt <- filterSNPs(
   df,
@@ -388,9 +404,15 @@ df_filt <- filterSNPs(
   maxSampleDepth = args$max_depth
 )
 df_filt <- runQTLseqAnalysis(df_filt, windowSize = args$window * 1000)
+print("Saving filtered SNP index file...")
 readr::write_tsv(df_filt, file = file.path(args$out, "SNPindex.filt.tsv"))
+print("Saving Manhattan plot for all chromosomes...")
 ggsave(file.path(args$out, "allchr.png"), plotQTLManh(df_filt), width = args$fig_width, height = args$fig_height)
+print("Saving plot for each chromosome...")
 for (chr in unique(df_filt$CHROM)) {
   p <- plotQTLStats(SNPset = df_filt, chr = chr)
   ggsave(file.path(args$out, paste0(chr, ".png")), p, width = args$fig_width, height = args$fig_height)
 }
+
+sink()
+close(log_con)
