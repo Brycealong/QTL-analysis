@@ -66,7 +66,12 @@ options:
 ```
 
 ### Parameters:
-![calc]()
+How reference allele frequency, SNP index for each bulk and delta SNP index are calculated:
+![calc](https://github.com/Brycealong/QTL-analysis/blob/main/images/calc.png)
+
+A note about window sizes:
+The calculations are performed using the `locfit` function from the locfit package using a user defined window size and the degree of the polynomial set to zero. For a discussion about window size, we recommend reading Magwene et al. (2011). In general, **larger windows will produce smoother data**. The functions making these calculations are rather fast, so we recommend testing several window sizes for your data, and then deciding on the optimal size.
+
 ### Example:
 
 ```
