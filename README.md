@@ -126,3 +126,4 @@ Files inside `OUT_DIR` are like below.
   
 ## Citation
 - Hiroki Takagi, Akira Abe, Kentaro Yoshida, Shunichi Kosugi, Satoshi Natsume, Chikako Mitsuoka, Aiko Uemura, Hiroe Utsushi, Muluneh Tamiru, Shohei Takuno, Hideki Innan, Liliana M. Cano, Sophien Kamoun, Ryohei Terauchi (2013).  [QTL-seq: rapid mapping of quantitative trait loci in rice by whole genome resequencing of DNA from two bulked populations](https://doi.org/10.1111/tpj.12105). Plant journal 74:174-183.
+- Mansfeld, B.N. and Grumet, R. (2018), QTLseqr: An R Package for Bulk Segregant Analysis with Next-Generation Sequencing. The Plant Genome, 11: 180006. https://doi.org/10.3835/plantgenome2018.01.0006
