@@ -2,10 +2,7 @@
 
 ## Table of contents
 - [Dependencies](#dependencies)
-  + [Installation using conda](#installation-using-conda)
 - [Usage](#usage)
-  + [Example](#example)
-  + [Possible Errors](#possible-errors)
 - [Outputs](#outputs)
 
 
@@ -68,6 +65,8 @@ options:
 
 ```
 
+### Parameters:
+![calc]()
 ### Example:
 
 ```
@@ -79,7 +78,7 @@ Rscript qtlseq.R -v wheat-vcf/ALL.vcf.gz \
         -w 25000
 ```
 
-### Possible Errors
+### Possible Errors:
 
 You may encounter `Out of vertex space` error when doing smoothing. Have the window size go higher will generally solve this issue. For more: https://github.com/bmansfeld/QTLseqr/issues/60
 
